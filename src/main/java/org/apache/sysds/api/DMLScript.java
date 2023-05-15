@@ -457,7 +457,7 @@ public class DMLScript
 		dmlt.constructLops(prog);
 
 		//Step 7: rewrite LOP DAGs (incl adding new LOPs s.a. prefetch, broadcast)
-		dmlt.rewriteLopDAG(prog);
+//		dmlt.rewriteLopDAG(prog);
 		
 		//Step 8: generate runtime program, incl codegen
 		Program rtprog = dmlt.getRuntimeProgram(prog, ConfigurationManager.getDMLConfig());

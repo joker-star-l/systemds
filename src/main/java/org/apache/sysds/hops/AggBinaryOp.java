@@ -295,7 +295,7 @@ public class AggBinaryOp extends MultiThreadedHop {
 		// * All matrix multiplications internally use dense output representations for efficiency.
 		//   This is reflected in our conservative memory estimate. However, we additionally need 
 		//   to account for potential final dense/sparse transformations via processing mem estimates.
-		double sparsity = (nnz == 0) ? 0 : 1;
+		double sparsity = ((double) nnz) / dim1 / dim2;
 		double ret;
 		/*
 		if( isMatrixMultiply() ) {	
@@ -316,6 +316,17 @@ public class AggBinaryOp extends MultiThreadedHop {
 		// estimated as dense in order to account for dense intermediate without unnecessary overestimation
 		ret = OptimizerUtils.estimateSizeExactSparsity(dim1, dim2, sparsity);
 
+		if (sparsity < MatrixBlock.SPARSITY_TURN_POINT && getInput(0).dimsKnown() && getInput(1).dimsKnown()) {
+			double sparseRet = ret;
+			double sparseIntermediate = Math.min(OptimizerUtils.getConstrainedNumThreads(_maxNumThreads), getInput(0).getDim1())
+					* OptimizerUtils.estimateSizeExactSparsity(1, getInput(1).getDim2(), 1.0);
+
+			double denseRet = OptimizerUtils.estimateSizeExactSparsity(dim1, dim2, 1.0);
+			double denseIntermediate = 0;
+
+			return sparseRet + sparseIntermediate > denseRet + denseIntermediate ? denseRet : sparseRet;
+		}
+
 		return ret;
 	}
 	
@@ -334,6 +345,18 @@ public class AggBinaryOp extends MultiThreadedHop {
 			if(in1Sparse && !in2Sparse) {
 				// Only in sparse-dense cases, we need additional memory budget for GPU
 				ret += OptimizerUtils.estimateSizeExactSparsity(dim1, dim2, 1.0);
+			}
+		} else {
+			double sparsity = ((double) nnz) / dim1 / dim2;
+			if (sparsity < MatrixBlock.SPARSITY_TURN_POINT && getInput(0).dimsKnown() && getInput(1).dimsKnown()) {
+				double sparseRet = OptimizerUtils.estimateSizeExactSparsity(dim1, dim2, nnz);
+				double sparseIntermediate = Math.min(OptimizerUtils.getConstrainedNumThreads(_maxNumThreads), getInput(0).getDim1())
+						* OptimizerUtils.estimateSizeExactSparsity(1, getInput().get(1).getDim2(), 1.0);
+
+				double denseRet = OptimizerUtils.estimateSizeExactSparsity(dim1, dim2, 1.0);
+				double denseIntermediate = 0;
+
+				return sparseRet + sparseIntermediate > denseRet + denseIntermediate ? denseIntermediate : sparseIntermediate;
 			}
 		}
 
@@ -1081,7 +1104,8 @@ public class AggBinaryOp extends MultiThreadedHop {
 		//step 4: general purpose MM
 		return MMultMethod.MM; 
 	}
-	
+
+	// TODO
 	private MMultMethod optFindMMultMethodSpark( long m1_rows, long m1_cols, long m1_blen, long m1_nnz, 
 		long m2_rows, long m2_cols, long m2_blen, long m2_nnz,
 		MMTSJType mmtsj, ChainType chainType, boolean leftPMInput, boolean tmmRewrite ) 
@@ -1227,7 +1251,24 @@ public class AggBinaryOp extends MultiThreadedHop {
 			return MMultMethod.RMM;
 	}
 
-	private static double getRMMCostEstimate( long m1_rows, long m1_cols, long m1_blen, 
+	// TODO
+	private double getRMMCostEstimateWithSparsity() {
+		Hop m1 = this.getInput(0);
+		Hop m2 = this.getInput(1);
+
+		assert m1.dimsKnown() && m2.dimsKnown() && this.dimsKnown();
+
+		// 此处默认两个矩阵的blocksize相等
+		long m_b = (long) Math.ceil((double) m1.getDim1() / m1.getBlocksize());
+		long n_b = (long) Math.ceil((double) m2.getDim2() / m2.getBlocksize());
+
+		double m1_size = OptimizerUtils.estimateSize(m1.getDataCharacteristics());
+		double m2_size = OptimizerUtils.estimateSize(m2.getDataCharacteristics());
+
+		return n_b * m1_size + m_b * m2_size;
+	}
+
+	private static double getRMMCostEstimate( long m1_rows, long m1_cols, long m1_blen,
 			long m2_rows, long m2_cols, long m2_blen )
 	{
 		long m1_nrb = (long) Math.ceil((double)m1_rows/m1_blen); // number of row blocks in m1
@@ -1251,6 +1292,23 @@ public class AggBinaryOp extends MultiThreadedHop {
 		
 		// return total costs
 		return rmm_costs;
+	}
+
+	// TODO
+	private double getCPMMCostEstimateWithSparsity() {
+		Hop m1 = this.getInput(0);
+		Hop m2 = this.getInput(1);
+
+		assert m1.dimsKnown() && m2.dimsKnown() && this.dimsKnown();
+
+		// 此处默认两个矩阵的blocksize相等
+		long k_b = (long) Math.ceil((double) m1.getDim2() / m1.getBlocksize());
+
+		double m1_size = OptimizerUtils.estimateSize(m1.getDataCharacteristics());
+		double m2_size = OptimizerUtils.estimateSize(m2.getDataCharacteristics());
+		double result_size = OptimizerUtils.estimateSize(getDataCharacteristics());
+
+		return m1_size + m2_size + k_b * result_size;
 	}
 
 	private static double getCPMMCostEstimate( long m1_rows, long m1_cols, long m1_blen, 

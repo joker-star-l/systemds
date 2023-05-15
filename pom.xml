@@ -150,6 +150,9 @@
 				<directory>src/test/config/hadoop_bin_windows/bin</directory>
 				<targetPath>../lib/hadoop/bin</targetPath>
 			</resource>
+			<resource>
+				<directory>src/main/resources</directory>
+			</resource>
 		</resources>
 
 		<plugins>
@@ -1382,7 +1385,7 @@
 			<groupId>io.netty</groupId>
 			<artifactId>netty-all</artifactId>
 			<version>4.1.68.Final</version>
-			<scope>provided</scope>
+<!--			<scope>provided</scope>-->
 			<exclusions>
 				<exclusion>
 					<groupId>org.apache.logging.log4j</groupId>

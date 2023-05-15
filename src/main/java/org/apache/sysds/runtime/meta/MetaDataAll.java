@@ -96,6 +96,7 @@ public class MetaDataAll extends DataIdentifier {
 			parseMetaDataParams();
 	}
 
+	/* important */
 	public JSONObject readMetadataFile(String filename, boolean conditional)
 	{
 		JSONObject retVal = new JSONObject();
@@ -265,6 +266,15 @@ public class MetaDataAll extends DataIdentifier {
 			}
 
 			parseMetaDataParam(key, val);
+
+			// 获取扩展元数据
+			if (dimsKnown()) {
+				String extFileName = mtdFileName + MetaDataExt.EXT;
+				MetaDataExt ext = MetaDataExt.readAndParse(extFileName, _dim1, _dim2);
+				if (ext != null) {
+					MetaDataExt.CACHE.put(mtdFileName, ext);
+				}
+			}
 
 			// if the read method parameter is a constant, then verify value matches MTD metadata file
 			if (varParams.get(key.toString()) != null && (varParams.get(key.toString()) instanceof ConstIdentifier)

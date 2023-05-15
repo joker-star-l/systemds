@@ -197,10 +197,17 @@ public abstract class ProgramBlock implements ParseInfo {
 	}
 
 	protected void executeInstructions(ArrayList<Instruction> inst, ExecutionContext ec) {
+		LOG.info("ProgramBlock " + "lines: (" + _beginLine + "-" + _endLine + ")");
+		for(Instruction ins : inst) {
+			System.out.println(ins);
+		}
+		System.out.println();
+
 		for(int i = 0; i < inst.size(); i++) {
 			// indexed access required due to dynamic add
 			Instruction currInst = inst.get(i);
 			// execute instruction
+			/* important */
 			executeSingleInstruction(currInst, ec);
 		}
 	}
@@ -252,6 +259,7 @@ public abstract class ProgramBlock implements ParseInfo {
 				long et0 = (!ReuseCacheType.isNone() || DMLScript.LINEAGE_ESTIMATE) ? System.nanoTime() : 0;
 
 				// process actual instruction
+				/* important */
 				tmp.processInstruction(ec);
 
 				// cache result

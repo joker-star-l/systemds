@@ -55,19 +55,12 @@ import org.apache.sysds.hops.MultiThreadedHop;
 import org.apache.sysds.hops.OptimizerUtils;
 import org.apache.sysds.hops.UnaryOp;
 import org.apache.sysds.hops.codegen.SpoofCompiler;
-import org.apache.sysds.hops.rewrite.HopRewriteUtils;
-import org.apache.sysds.hops.rewrite.ProgramRewriter;
+import org.apache.sysds.hops.rewrite.*;
+import org.apache.sysds.hops.utils.HopUtil;
 import org.apache.sysds.lops.Lop;
 import org.apache.sysds.lops.compile.Dag;
 import org.apache.sysds.lops.rewrite.LopRewriter;
-import org.apache.sysds.parser.DMLProgram;
-import org.apache.sysds.parser.DataExpression;
-import org.apache.sysds.parser.ForStatementBlock;
-import org.apache.sysds.parser.IfStatementBlock;
-import org.apache.sysds.parser.ParseInfo;
-import org.apache.sysds.parser.Statement;
-import org.apache.sysds.parser.StatementBlock;
-import org.apache.sysds.parser.WhileStatementBlock;
+import org.apache.sysds.parser.*;
 import org.apache.sysds.runtime.DMLRuntimeException;
 import org.apache.sysds.runtime.controlprogram.BasicProgramBlock;
 import org.apache.sysds.runtime.controlprogram.ForProgramBlock;
@@ -161,6 +154,7 @@ public class Recompiler {
 		//need for synchronization as we do temp changes in shared hops/lops
 		//however, we create deep copies for most dags to allow for concurrent recompile
 		synchronized( hops ) {
+			System.out.println("【Start Recompile】");
 			newInst = recompile(sb, hops, ec, status, inplace, replaceLit, true, false, false, null, tid);
 		}
 		
@@ -357,8 +351,17 @@ public class Recompiler {
 				
 				//update stats after rewrites
 				Hop.resetVisitStatus(hops);
-				for( Hop hopRoot : hops )
-					rUpdateStatistics( hopRoot, ec.getVariables() );
+
+				// 基于稀疏度的重写
+				ProgramRewriter rewriter3 = new ProgramRewriter(
+						new RewriteMatrixSparsityEstimPropagationBeforeMMChain(),
+						new RewriteMatrixMultChainOptimizationWithSparsityEstim(),
+						new RewriteMatrixSparsityEstimPropagation());
+				rewriter3.rewriteHopDAG(hops, null);
+				Hop.resetVisitStatus(hops);
+
+//				for( Hop hopRoot : hops )
+//					rUpdateStatistics( hopRoot, ec.getVariables() );
 				rewrittenHops = true;
 			}
 			
@@ -372,6 +375,10 @@ public class Recompiler {
 			for( Hop hopRoot : hops )
 				hopRoot.refreshMemEstimates(memo);
 			memo.extract(hops, status);
+
+			for (Hop h : hops) {
+				HopUtil.printHop(h);
+			}
 		}
 		
 		// codegen if enabled

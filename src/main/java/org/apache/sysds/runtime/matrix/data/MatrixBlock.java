@@ -5872,6 +5872,21 @@ public class MatrixBlock extends MatrixValue implements CacheBlock<MatrixBlock>,
 		return sb.toString();
 	}
 
+	public String str()
+	{
+
+		return "sparse? = " +
+				sparse +
+				", " +
+				"nonzeros = " +
+				nonZeros +
+				", " +
+				"size: " +
+				rlen +
+				" X " +
+				clen;
+	}
+
 
 	public double getDouble(int r, int c){
 		return quickGetValue(r, c);

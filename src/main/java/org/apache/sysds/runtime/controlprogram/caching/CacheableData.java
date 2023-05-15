@@ -54,10 +54,8 @@ import org.apache.sysds.runtime.io.FileFormatProperties;
 import org.apache.sysds.runtime.io.IOUtilFunctions;
 import org.apache.sysds.runtime.io.ReaderWriterFederated;
 import org.apache.sysds.runtime.lineage.LineageItem;
-import org.apache.sysds.runtime.meta.DataCharacteristics;
-import org.apache.sysds.runtime.meta.MatrixCharacteristics;
-import org.apache.sysds.runtime.meta.MetaData;
-import org.apache.sysds.runtime.meta.MetaDataFormat;
+import org.apache.sysds.runtime.matrix.data.MatrixBlock;
+import org.apache.sysds.runtime.meta.*;
 import org.apache.sysds.runtime.util.HDFSTool;
 import org.apache.sysds.runtime.util.LocalFileUtils;
 import org.apache.sysds.utils.Statistics;
@@ -165,6 +163,10 @@ public abstract class CacheableData<T extends CacheBlock<?>> extends Data
 	
 	/** Container object that holds the actual data. */
 	protected T _data = null;
+
+	public T getData() {
+		return _data;
+	}
 
 	/**
 	 * Object that holds the metadata associated with the matrix, which
@@ -916,6 +918,13 @@ public abstract class CacheableData<T extends CacheBlock<?>> extends Data
 			// b) write the matrix 
 			try {
 				writeMetaData( fName, outputFormat, formatProperties );
+
+				// 写入扩展元数据
+				if (_data instanceof MatrixBlock) {
+					MatrixBlock m = (MatrixBlock) _data;
+					new MetaDataExt(m).write(fName + ".mtd" + MetaDataExt.EXT);
+				}
+
 				writeBlobToHDFS( fName, outputFormat, replication, formatProperties );
 				if ( !pWrite )
 					setDirty(false);
@@ -975,7 +984,7 @@ public abstract class CacheableData<T extends CacheBlock<?>> extends Data
 			CacheStatistics.incrementExportTime(t1-t0);
 		}
 	}
-	
+
 	// --------- ABSTRACT LOW-LEVEL CACHE I/O OPERATIONS ----------
 
 	/**

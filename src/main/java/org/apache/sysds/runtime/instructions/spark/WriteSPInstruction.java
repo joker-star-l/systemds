@@ -55,7 +55,10 @@ import org.apache.sysds.runtime.matrix.data.MatrixBlock;
 import org.apache.sysds.runtime.matrix.data.MatrixIndexes;
 import org.apache.sysds.runtime.meta.DataCharacteristics;
 import org.apache.sysds.runtime.meta.MatrixCharacteristics;
+import org.apache.sysds.runtime.meta.MetaDataExt;
 import org.apache.sysds.runtime.util.HDFSTool;
+import org.sparkproject.guava.collect.Lists;
+import scala.Tuple2;
 
 public class WriteSPInstruction extends SPInstruction implements LineageTraceable {
 	public CPOperand input1 = null;
@@ -297,6 +300,22 @@ public class WriteSPInstruction extends SPInstruction implements LineageTraceabl
 
 		// write meta data file
 		HDFSTool.writeMetaDataFile(fname + ".mtd", ValueType.FP64, mcOut, fmt, formatProperties);
+
+		// 写入元数据扩展
+		JavaPairRDD<MatrixIndexes, MetaDataExt> pair = in1.mapToPair(tuple2 -> new Tuple2<>(tuple2._1, new MetaDataExt(tuple2._2)));
+		JavaPairRDD<Long, int[]> rPair = pair.mapToPair(tuple2 -> new Tuple2<>(tuple2._1.getRowIndex(), tuple2._2.e.getRowCounts()));
+		JavaRDD<String> rStr = MetaDataExt.nnzCountsToRDDString(rPair);
+		JavaPairRDD<Long, int[]> cPair = pair.mapToPair(tuple2 -> new Tuple2<>(tuple2._1.getColumnIndex(), tuple2._2.e.getColCounts()));
+		JavaRDD<String> cStr = MetaDataExt.nnzCountsToRDDString(cPair);
+		JavaRDD<String> splitter = sec.getSparkContext().parallelize(Lists.newArrayList(MetaDataExt.SPLITTER), 1);
+		JavaRDD<String> str = rStr.union(splitter).union(cStr).repartition(1);
+
+		long start = System.currentTimeMillis();
+		String extName = fname + ".mtd" + MetaDataExt.EXT;
+		HDFSTool.deleteFileIfExistOnHDFS(extName);
+		str.saveAsTextFile(extName);
+		long end = System.currentTimeMillis();
+		LOG.debug("write meta data extension file [" + extName + "] time: " + (end - start) + "ms");
 	}
 
 	protected void processFrameWriteInstruction(SparkExecutionContext sec, String fname, FileFormat fmt, ValueType[] schema)

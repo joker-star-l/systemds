@@ -27,6 +27,7 @@ import org.apache.sysds.common.Types.ValueType;
 import org.apache.sysds.runtime.DMLRuntimeException;
 import org.apache.sysds.runtime.DMLScriptException;
 import org.apache.sysds.runtime.controlprogram.context.ExecutionContext;
+import org.apache.sysds.runtime.controlprogram.util.ProgramBlockUtil;
 import org.apache.sysds.runtime.instructions.Instruction;
 import org.apache.sysds.runtime.instructions.cp.BooleanObject;
 
@@ -103,6 +104,7 @@ public class IfProgramBlock extends ProgramBlock
 		if(predResult.getBooleanValue()) {
 			try  {
 				for (int i=0 ; i < _childBlocksIfBody.size() ; i++) {
+					ProgramBlockUtil.prepareRewriteBasicProgramBlock(_childBlocksIfBody, i, ec);
 					_childBlocksIfBody.get(i).execute(ec);
 				}
 			}
@@ -116,6 +118,7 @@ public class IfProgramBlock extends ProgramBlock
 		else {
 			try {
 				for (int i=0 ; i < _childBlocksElseBody.size() ; i++) {
+					ProgramBlockUtil.prepareRewriteBasicProgramBlock(_childBlocksElseBody, i, ec);
 					_childBlocksElseBody.get(i).execute(ec);
 				}
 			}

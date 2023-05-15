@@ -29,6 +29,7 @@ import org.apache.sysds.runtime.DMLRuntimeException;
 import org.apache.sysds.runtime.DMLScriptException;
 import org.apache.sysds.runtime.controlprogram.caching.MatrixObject.UpdateType;
 import org.apache.sysds.runtime.controlprogram.context.ExecutionContext;
+import org.apache.sysds.runtime.controlprogram.util.ProgramBlockUtil;
 import org.apache.sysds.runtime.instructions.Instruction;
 import org.apache.sysds.runtime.instructions.cp.BooleanObject;
 import org.apache.sysds.runtime.lineage.LineageDedupUtils;
@@ -102,7 +103,7 @@ public class WhileProgramBlock extends ProgramBlock
 			// compute and store the number of distinct paths
 			if (DMLScript.LINEAGE_DEDUP)
 				ec.getLineage().initializeDedupBlock(this, ec);
-			
+
 			//run loop body until predicate becomes false
 			while( executePredicate(ec).getBooleanValue() ) {
 				if (DMLScript.LINEAGE_DEDUP)
@@ -114,6 +115,7 @@ public class WhileProgramBlock extends ProgramBlock
 				
 				//execute all child blocks
 				for (int i=0 ; i < _childBlocks.size() ; i++) {
+					ProgramBlockUtil.prepareRewriteBasicProgramBlock(_childBlocks, i, ec);
 					_childBlocks.get(i).execute(ec);
 				}
 				

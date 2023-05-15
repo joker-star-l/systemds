@@ -19,19 +19,14 @@
 
 package org.apache.sysds.parser;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.sysds.api.DMLScript;
 import org.apache.sysds.common.Builtins;
+import org.apache.sysds.common.Types;
 import org.apache.sysds.common.Types.AggOp;
 import org.apache.sysds.common.Types.DataType;
 import org.apache.sysds.common.Types.Direction;
@@ -73,8 +68,8 @@ import org.apache.sysds.hops.codegen.SpoofCompiler.IntegrationType;
 import org.apache.sysds.hops.codegen.SpoofCompiler.PlanCachePolicy;
 import org.apache.sysds.hops.ipa.InterProceduralAnalysis;
 import org.apache.sysds.hops.recompile.Recompiler;
-import org.apache.sysds.hops.rewrite.HopRewriteUtils;
-import org.apache.sysds.hops.rewrite.ProgramRewriter;
+import org.apache.sysds.hops.rewrite.*;
+import org.apache.sysds.lops.DataGen;
 import org.apache.sysds.lops.Lop;
 import org.apache.sysds.lops.LopsException;
 import org.apache.sysds.lops.compile.Dag;
@@ -91,6 +86,7 @@ import org.apache.sysds.runtime.controlprogram.ProgramBlock;
 import org.apache.sysds.runtime.controlprogram.WhileProgramBlock;
 import org.apache.sysds.runtime.instructions.Instruction;
 import org.apache.sysds.runtime.instructions.cp.VariableCPInstruction;
+import org.apache.sysds.runtime.meta.MetaDataExt;
 
 public class DMLTranslator 
 {
@@ -295,7 +291,7 @@ public class DMLTranslator
 		ProgramRewriter rewriter2 = new ProgramRewriter(false, true);
 		rewriter2.rewriteProgramHopDAGs(dmlp);
 		resetHopsDAGVisitStatus(dmlp);
-		
+
 		//compute memory estimates for all the hops. These estimates are used
 		//subsequently in various optimizations, e.g. CP vs. MR scheduling and parfor.
 		refreshMemEstimates(dmlp);
@@ -1142,14 +1138,15 @@ public class DMLTranslator
 				DataIdentifier target = as.getTarget();
 				Expression source = as.getSource();
 
-			
+
 				// CASE: regular assignment statement -- source is DML expression that is NOT user-defined or external function 
 				if (!(source instanceof FunctionCallIdentifier)){
-				
+					Hop ae = null;
+
 					// CASE: target is regular data identifier
 					if (!(target instanceof IndexedIdentifier)) {
 						//process right hand side and accumulation
-						Hop ae = processExpression(source, target, ids);
+						ae = processExpression(source, target, ids);
 						if( as.isAccumulator() ) {
 							DataIdentifier accum = getAccumulatorData(liveIn, target.getName());
 							ae = HopRewriteUtils.createBinary(ids.get(target.getName()), ae, OpOp2.PLUS);
@@ -1178,7 +1175,7 @@ public class DMLTranslator
 					} 
 					// CASE: target is indexed identifier (left-hand side indexed expression)
 					else {
-						Hop ae = processLeftIndexedExpression(source, (IndexedIdentifier)target, ids);
+						ae = processLeftIndexedExpression(source, (IndexedIdentifier)target, ids);
 						
 						if( as.isAccumulator() ) {
 							DataIdentifier accum = getAccumulatorData(liveIn, target.getName());
@@ -1213,6 +1210,49 @@ public class DMLTranslator
 							transientwrite.setParseInfo(target);
 							updatedLiveOut.addVariable(target.getName(), target);
 							output.add(transientwrite);
+						}
+					}
+
+					// 元数据扩展传递
+					if (DataType.MATRIX.equals(ae.getDataType())) {
+						if (ae instanceof DataOp) {
+							DataOp dae = (DataOp) ae;
+							if (OpOpData.PERSISTENTREAD.equals(dae.getOp())) {
+								MetaDataExt ext = MetaDataExt.CACHE.get(dae.getFileName() + ".mtd");
+								if (ext != null) {
+									MetaDataExt.CACHE.put(target.getName(), ext);
+								}
+							}
+						} else if (ae instanceof DataGenOp) {
+							DataGenOp dae = (DataGenOp) ae;
+							if (OpOpDG.RAND.equals(dae.getOp())) {
+								double sp = ((LiteralOp) dae.getInput(DataExpression.RAND_SPARSITY)).getDoubleValue();
+								double min = ((LiteralOp) dae.getInput(DataExpression.RAND_MIN)).getDoubleValue();
+								double max = ((LiteralOp) dae.getInput(DataExpression.RAND_MAX)).getDoubleValue();
+								int rows = (int) ((LiteralOp) dae.getInput(DataExpression.RAND_ROWS)).getLongValue();
+								int cols = (int) ((LiteralOp) dae.getInput(DataExpression.RAND_COLS)).getLongValue();
+								int[] r = new int[rows];
+								int[] c = new int[cols];
+								// TODO 修改
+								if (min == 0 && max == 0) {
+									// do nothing
+								} else {
+									Arrays.fill(r, (int) Math.ceil(sp * cols));
+									Arrays.fill(c, (int) Math.ceil(sp * rows));
+								}
+								MetaDataExt.CACHE.put(target.getName(), new MetaDataExt(r, c));
+							}
+						} else if (ae instanceof ReorgOp) {
+							ReorgOp rae = (ReorgOp) ae;
+							if (Types.ReOrgOp.DIAG.equals(rae.getOp()) && rae.dimsKnown()) {
+								int rows = (int) rae.getDim1();
+								int cols = (int) rae.getDim2();
+								int[] r = new int[rows];
+								int[] c = new int[cols];
+								Arrays.fill(r, 1);
+								Arrays.fill(c, rows / cols);
+								MetaDataExt.CACHE.put(target.getName(), new MetaDataExt(r, c));
+							}
 						}
 					}
 				}

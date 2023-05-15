@@ -1373,6 +1373,14 @@ public class StatementBlock extends LiveVariableAnalysis implements ParseInfo
 			&& Recompiler.requiresRecompilation(getHops()));
 	}
 
+	public void setRecompilationFlag(boolean flag) {
+		if (!flag) {
+			_requiresRecompile = false;
+		} else {
+			_requiresRecompile = ConfigurationManager.isDynamicRecompilation();
+		}
+	}
+
 	public boolean requiresRecompilation() {
 		return _requiresRecompile;
 	}

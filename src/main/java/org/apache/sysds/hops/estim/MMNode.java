@@ -38,7 +38,18 @@ public class MMNode
 	private Object _synops = null;
 	private final OpCode _op;
 	private final long[] _misc;
-	
+
+	// leaf with fake data
+	public MMNode(DataCharacteristics mc) {
+		_m1 = null;
+		_m2 = null;
+		// trick and fake
+		_data = new MatrixBlock();
+		_mc = mc;
+		_op = null;
+		_misc = null;
+	}
+
 	public MMNode(MatrixBlock in) {
 		_m1 = null;
 		_m2 = null;

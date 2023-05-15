@@ -19,6 +19,7 @@
 
 package org.apache.sysds.runtime.meta;
 
+import org.apache.sysds.hops.OptimizerUtils;
 import org.apache.sysds.runtime.DMLRuntimeException;
 import org.apache.sysds.runtime.matrix.operators.AggregateBinaryOperator;
 import org.apache.sysds.runtime.matrix.operators.AggregateUnaryOperator;
@@ -73,6 +74,9 @@ public abstract class DataCharacteristics implements Serializable {
 	}
 
 	public int getBlocksize() {
+		if (this instanceof MatrixCharacteristics) {
+			return _blocksize > 0 ? _blocksize : OptimizerUtils.DEFAULT_BLOCKSIZE;
+		}
 		return _blocksize;
 	}
 

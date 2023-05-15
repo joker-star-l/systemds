@@ -186,20 +186,37 @@ public class LibMatrixMult
 		// Timing time = new Timing(true);
 		
 		// pre analysis
+		// 判断m1是否是置换矩阵
 		boolean m1Perm = m1.isSparsePermutationMatrix();
+		// 预测输出是否是ultraSparse
 		boolean ultraSparse = (fixedRet && ret.sparse) ||
 			(!fixedRet && isUltraSparseMatrixMult(m1, m2, m1Perm));
+		// 预测输出是否是sparse
 		boolean sparse = !fixedRet && !ultraSparse && !m1Perm
 			&& isSparseOutputMatrixMult(m1, m2);
-		
+
+		// 单机计算
+		if (m1.getNumRows() > OptimizerUtils.DEFAULT_BLOCKSIZE
+				|| m1.getNumColumns() > OptimizerUtils.DEFAULT_BLOCKSIZE
+				|| m2.getNumRows() > OptimizerUtils.DEFAULT_BLOCKSIZE
+				|| m2.getNumColumns() > OptimizerUtils.DEFAULT_BLOCKSIZE) {
+			if (m1.estimateSizeInMemory()
+					+ m2.estimateSizeInMemory()
+					+ OptimizerUtils.estimateSizeExactSparsity(m1.getNumRows(), m2.getNumColumns(), 1.0)
+					> OptimizerUtils.getLocalMemBudget()) {
+				sparse = true;
+			}
+		}
+
 		// allocate output
 		if(ret == null)
 			ret = new MatrixBlock(m1.rlen, m2.clen, ultraSparse | sparse);
-		else 
+		else
 			ret.reset(m1.rlen, m2.clen, ultraSparse | sparse);
 		ret.allocateBlock();
-		
+
 		// Detect if we should transpose skinny right side.
+		// 检测m2是否需要转置，仅对dense生效
 		boolean tm2 = !fixedRet && checkPrepMatrixMultRightInput(m1,m2);
 		m2 = prepMatrixMultRightInput(m1, m2, tm2);
 
@@ -209,6 +226,9 @@ public class LibMatrixMult
 				|| fixedRet) // Fixed ret not supported in multithreaded execution yet
 			k = 1;
 
+//		// test
+//		k = 1;
+
 		if(k <= 1)
 			singleThreadedMatrixMult(m1, m2, ret, ultraSparse, sparse, tm2, m1Perm, fixedRet);
 		else
@@ -216,13 +236,16 @@ public class LibMatrixMult
 
 		//System.out.println("MM "+k+" ("+m1.isInSparseFormat()+","+m1.getNumRows()+","+m1.getNumColumns()+","+m1.getNonZeros()+")x" +
 		//		"("+m2.isInSparseFormat()+","+m2.getNumRows()+","+m2.getNumColumns()+","+m2.getNonZeros()+") in "+time.stop());
-	
+
+		LOG.info("\ninput1: " + m1.str() + "; input2: " + m2.str() + "; output: " + ret.str() + ";");
+
 		return ret;
 	}
 
 	private static void singleThreadedMatrixMult(MatrixBlock m1, MatrixBlock m2, MatrixBlock ret,  
 		boolean ultraSparse, boolean sparse, boolean tm2, boolean m1Perm, boolean fixedRet){
 		// prepare row-upper for special cases of vector-matrix
+		// 取较大的行
 		final boolean pm2 = !ultraSparse && checkParMatrixMultRightInputRows(m1, m2, Integer.MAX_VALUE);
 		final int ru2 = (pm2) ? m2.rlen : m1.rlen;
 
@@ -1533,7 +1556,7 @@ public class LibMatrixMult
 			}
 	}
 	
-	private static long matrixMultSparseSparseSparseMM(SparseBlock a, SparseBlock b, SparseBlock c, int n, int rl, int ru) {
+	public static long matrixMultSparseSparseSparseMM(SparseBlock a, SparseBlock b, SparseBlock c, int n, int rl, int ru) {
 		double[] tmp = new double[n];
 		long nnz = 0;
 		for( int i=rl; i<Math.min(ru, a.numRows()); i++ ) {
@@ -1584,7 +1607,7 @@ public class LibMatrixMult
 		}
 	}
 	
-	private static void matrixMultSparseSparseMM(SparseBlock a, SparseBlock b, DenseBlock c, int m, int cd, long nnz1, int rl, int ru) {
+	public static void matrixMultSparseSparseMM(SparseBlock a, SparseBlock b, DenseBlock c, int m, int cd, long nnz1, int rl, int ru) {
 		//block sizes for best-effort blocking w/ sufficient row reuse in B yet small overhead
 		final int blocksizeI = 32;
 		final int blocksizeK = Math.max(32,

@@ -758,6 +758,7 @@ public abstract class Hop implements ParseInfo {
 	 * 
 	 * @param memo memory table
 	 */
+	/* important */
 	public void computeMemEstimate(MemoTable memo)
 	{
 		DataCharacteristics wdc = null; 
@@ -852,7 +853,7 @@ public abstract class Hop implements ParseInfo {
 			long lnnz = getLength();
 			_processingMemEstimate = computeIntermediateMemEstimate(getDim1(), getDim2(), lnnz);
 		}
-		
+
 		
 		////////
 		//Step 3) Compute final hop memory estimate
@@ -869,6 +870,10 @@ public abstract class Hop implements ParseInfo {
 	 * @return output characteristics
 	 */
 	protected abstract DataCharacteristics inferOutputCharacteristics(MemoTable memo);
+
+	public DataCharacteristics inferOutputCharacteristics() {
+		return inferOutputCharacteristics(new MemoTable());
+	}
 
 	/**
 	 * Recursively computes memory estimates for all the Hops in the DAG rooted at the 
@@ -897,6 +902,7 @@ public abstract class Hop implements ParseInfo {
 	 * 
 	 * @return execution type
 	 */
+	/* important */
 	protected ExecType findExecTypeByMemEstimate() {
 		ExecType et = null;
 		char c = ' ';
@@ -1045,7 +1051,7 @@ public abstract class Hop implements ParseInfo {
 
 	@Override
 	public String toString(){
-		return super.getClass().getSimpleName() + "  " + getOpString();
+		return super.getClass().getSimpleName() + "  " + getOpString() + " " + getName();
 	}
 
 	// ========================================================================================
@@ -1100,7 +1106,7 @@ public abstract class Hop implements ParseInfo {
 	// ========================================================================================
 
 	
-	protected boolean isVector() {
+	public boolean isVector() {
 		return (dimsKnown() && (_dc.getRows() == 1 || _dc.getCols() == 1) );
 	}
 	
@@ -1240,6 +1246,17 @@ public abstract class Hop implements ParseInfo {
 	
 	public DataCharacteristics getDataCharacteristics() {
 		return _dc;
+	}
+
+	public void setDataCharacteristics(DataCharacteristics dc) {
+		_dc = _dc.set(dc);
+		if (DataType.MATRIX.equals(_dataType)) {
+			if (ExecType.SPARK.equals(_etype) || ExecType.SPARK.equals(_etypeForced)) {
+				_dc.setBlocksize(OptimizerUtils.DEFAULT_BLOCKSIZE);
+			} else if (ExecType.CP.equals(_etype) || ExecType.CP.equals(_etypeForced)) {
+				_dc.setBlocksize(-1);
+			}
+		}
 	}
 	
 	protected void setOutputDimensions(Lop lop) {

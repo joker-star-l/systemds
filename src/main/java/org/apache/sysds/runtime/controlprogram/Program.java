@@ -29,6 +29,7 @@ import org.apache.sysds.parser.FunctionDictionary;
 import org.apache.sysds.runtime.DMLRuntimeException;
 import org.apache.sysds.runtime.DMLScriptException;
 import org.apache.sysds.runtime.controlprogram.context.ExecutionContext;
+import org.apache.sysds.runtime.controlprogram.util.ProgramBlockUtil;
 
 public class Program 
 {
@@ -154,8 +155,10 @@ public class Program
 
 	public void execute(ExecutionContext ec) {
 		try{
-			for (int i=0; i<_programBlocks.size(); i++)
+			for (int i=0; i<_programBlocks.size(); i++) {
+				ProgramBlockUtil.prepareRewriteBasicProgramBlock(_programBlocks, i, ec);
 				_programBlocks.get(i).execute(ec);
+			}
 		}
 		catch(DMLScriptException e) {
 			throw e;

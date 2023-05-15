@@ -19,13 +19,19 @@
 
 package org.apache.sysds.runtime.controlprogram;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
+import com.google.common.collect.Sets;
+import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.sysds.api.DMLScript;
+import org.apache.sysds.common.Types;
 import org.apache.sysds.conf.ConfigurationManager;
+import org.apache.sysds.hops.DataOp;
+import org.apache.sysds.hops.Hop;
 import org.apache.sysds.hops.recompile.Recompiler;
 import org.apache.sysds.runtime.DMLRuntimeException;
+import org.apache.sysds.runtime.controlprogram.caching.MatrixObject;
 import org.apache.sysds.runtime.controlprogram.context.ExecutionContext;
 import org.apache.sysds.runtime.instructions.Instruction;
 import org.apache.sysds.runtime.lineage.LineageCache;
@@ -33,7 +39,11 @@ import org.apache.sysds.runtime.lineage.LineageCacheConfig;
 import org.apache.sysds.runtime.lineage.LineageCacheStatistics;
 import org.apache.sysds.runtime.lineage.LineageItem;
 import org.apache.sysds.runtime.lineage.LineageItemUtils;
+import org.apache.sysds.runtime.matrix.data.MatrixBlock;
+import org.apache.sysds.runtime.matrix.data.MatrixIndexes;
+import org.apache.sysds.runtime.meta.MetaDataExt;
 import org.apache.sysds.utils.stats.RecompileStatistics;
+import scala.Tuple2;
 
 public class BasicProgramBlock extends ProgramBlock 
 {
@@ -123,10 +133,60 @@ public class BasicProgramBlock extends ProgramBlock
 
 		//actual instruction execution
 		executeInstructions(tmp, ec);
+
+//		// 更新MNC
+		postExecuteInstructions(ec);
 		
 		//statement-block-level, lineage-based caching
 		if (_sb != null && liInputs != null && !_sb.isNondeterministic())
 			LineageCache.putValue(_sb.getOutputsofSB(),
 				liInputs, _sb.getName(), ec, System.nanoTime()-t0);
+	}
+
+	private void postExecuteInstructions(ExecutionContext ec) {
+		if (getStatementBlock() == null) {
+			return;
+		}
+		Set<String> variableNames = getStatementBlock().liveOut().getVariableNames();
+		Set<String> hopNames = getStatementBlock().getHops().stream()
+				.filter(h -> {
+					if (!Types.DataType.MATRIX.equals(h.getDataType())) {
+						return false;
+					}
+					if (h.getInput().size() == 1 && h.getInput(0) instanceof DataOp) {
+						if (!Objects.equals(h.getName(), h.getInput(0).getName())) {
+							MetaDataExt ext = MetaDataExt.CACHE.get(h.getInput(0).getName());
+							if (ext != null) {
+								MetaDataExt.CACHE.put(h.getName(), ext);
+							}
+						}
+						return false;
+					}
+					return true;
+				})
+				.map(Hop::getName)
+				.collect(Collectors.toSet());
+		Sets.SetView<String> names = Sets.intersection(variableNames, hopNames);
+		for (String name : names) {
+			MatrixObject matrix = (MatrixObject) ec.getVariable(name);
+			if (matrix.getRDDHandle() == null) { // 单机
+				MatrixBlock block = matrix.acquireReadAndRelease();
+				if (block != null) {
+					MetaDataExt ext = new MetaDataExt(block);
+					MetaDataExt.CACHE.put(name, ext);
+				}
+			} else { // 分布式
+				JavaPairRDD<MatrixIndexes, MatrixBlock> mac = (JavaPairRDD<MatrixIndexes, MatrixBlock>) matrix.getRDDHandle().getRDD();
+				JavaPairRDD<MatrixIndexes, MetaDataExt> pair = mac.mapToPair(tuple2 -> new Tuple2<>(tuple2._1, new MetaDataExt(tuple2._2)));
+				JavaPairRDD<Long, int[]> rPair = pair.mapToPair(tuple2 -> new Tuple2<>(tuple2._1.getRowIndex(), tuple2._2.e.getRowCounts()));
+				JavaPairRDD<Long, int[]> cPair = pair.mapToPair(tuple2 -> new Tuple2<>(tuple2._1.getColumnIndex(), tuple2._2.e.getColCounts()));
+				int[] r = MetaDataExt.collectNnzCounts(rPair);
+				int[] c = MetaDataExt.collectNnzCounts(cPair);
+				if (r.length > 0 && c.length > 0) {
+					MetaDataExt ext = new MetaDataExt(r, c);
+					MetaDataExt.CACHE.put(name, ext);
+				}
+			}
+		}
 	}
 }
