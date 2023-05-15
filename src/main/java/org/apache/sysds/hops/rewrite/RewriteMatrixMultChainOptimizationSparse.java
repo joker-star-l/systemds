@@ -132,7 +132,7 @@ public class RewriteMatrixMultChainOptimizationSparse extends RewriteMatrixMultC
 		LocalVariableMap vars = state.getVariables();
 		
 		for( int i=0; i<chain.size(); i++ ) {
-			inputsAvail &= HopRewriteUtils.isData(chain.get(0), OpOpData.TRANSIENTREAD);
+			inputsAvail &= HopRewriteUtils.isData(chain.get(i), OpOpData.TRANSIENTREAD);
 			if( inputsAvail )
 				sketchArray[i] = new MMNode(getMatrix(chain.get(i).getName(), vars));
 			else 
