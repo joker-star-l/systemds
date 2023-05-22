@@ -23,4 +23,11 @@ public class ComputeTest {
         long end = System.currentTimeMillis();
         System.out.println((end - start) + "ms");
     }
+
+    @Test
+    public void test2() {
+        int max = Integer.MAX_VALUE;
+        long max2 = (long) max * max;
+        System.out.println(max2);
+    }
 }

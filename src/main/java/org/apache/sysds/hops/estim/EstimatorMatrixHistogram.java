@@ -203,9 +203,9 @@ public class EstimatorMatrixHistogram extends SparsityEstimator
 			for( int j=0; j<h1.getCols(); j++ ) {
 				double lsp = (double) h1.cNnz[j] * h2.rNnz[j] / mnOut;
 				// 均匀
-//				spOut = spOut + lsp - spOut*lsp;
+				spOut = spOut + lsp - spOut*lsp;
 				// 上界
-				spOut = Math.min(1.0, spOut + lsp);
+//				spOut = Math.min(1.0, spOut + lsp);
 				// 下界
 //				spOut = Math.max(spOut, lsp);
 				// 超过1.0直接退出
@@ -297,40 +297,40 @@ public class EstimatorMatrixHistogram extends SparsityEstimator
 
 			// TODO
 			// 4) compute exception details if necessary (optional)
-//			if( useExcepts && !in.isEmpty() && (rMaxNnz > 1 || cMaxNnz > 1)
-//				&& in.getLength() != in.getNonZeros() ) { //not fully dense
-//				rNnz1e = new int[in.getNumRows()];
-//				cNnz1e = new int[in.getNumColumns()];
-//
-//				if( in.isInSparseFormat() ) {
-//					SparseBlock a = in.getSparseBlock();
-//					for( int i=0; i<m; i++ ) {
-//						if( a.isEmpty(i) ) continue;
-//						int alen = a.size(i);
-//						int apos = a.pos(i);
-//						int[] aix = a.indexes(i);
-//						for( int k=apos; k<apos+alen; k++ )
-//							if( cNnz[aix[k]] <= 1 )
-//								rNnz1e[i]++;
-//						if( alen == 1 )
-//							cNnz1e[aix[apos]]++;
-//					}
-//				}
-//				else {
-//					DenseBlock a = in.getDenseBlock();
-//					for( int i=0; i<m; i++ ) {
-//						double[] avals = a.values(i);
-//						int aix = a.pos(i);
-//						boolean rNnzlte1 = rNnz[i] <= 1;
-//						for( int j=0; j<n; j++ ) {
-//							if( avals[aix + j] != 0 ) {
-//								if( cNnz[j] <= 1 ) rNnz1e[i]++;
-//								if( rNnzlte1 ) cNnz1e[j]++;
-//							}
-//						}
-//					}
-//				}
-//			}
+			if( useExcepts && !in.isEmpty() && (rMaxNnz > 1 || cMaxNnz > 1)
+				&& in.getLength() != in.getNonZeros() ) { //not fully dense
+				rNnz1e = new int[in.getNumRows()];
+				cNnz1e = new int[in.getNumColumns()];
+
+				if( in.isInSparseFormat() ) {
+					SparseBlock a = in.getSparseBlock();
+					for( int i=0; i<m; i++ ) {
+						if( a.isEmpty(i) ) continue;
+						int alen = a.size(i);
+						int apos = a.pos(i);
+						int[] aix = a.indexes(i);
+						for( int k=apos; k<apos+alen; k++ )
+							if( cNnz[aix[k]] <= 1 )
+								rNnz1e[i]++;
+						if( alen == 1 )
+							cNnz1e[aix[apos]]++;
+					}
+				}
+				else {
+					DenseBlock a = in.getDenseBlock();
+					for( int i=0; i<m; i++ ) {
+						double[] avals = a.values(i);
+						int aix = a.pos(i);
+						boolean rNnzlte1 = rNnz[i] <= 1;
+						for( int j=0; j<n; j++ ) {
+							if( avals[aix + j] != 0 ) {
+								if( cNnz[j] <= 1 ) rNnz1e[i]++;
+								if( rNnzlte1 ) cNnz1e[j]++;
+							}
+						}
+					}
+				}
+			}
 		}
 		
 		public MatrixHistogram(int[] r, int[] r1e, int[] c, int[] c1e, int rmax, int cmax) {

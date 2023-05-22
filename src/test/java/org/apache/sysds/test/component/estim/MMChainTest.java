@@ -6,6 +6,8 @@ import org.apache.sysds.runtime.instructions.InstructionUtils;
 import org.apache.sysds.runtime.matrix.data.MatrixBlock;
 import org.junit.Test;
 
+import java.util.SplittableRandom;
+
 public class MMChainTest {
     public static int n = 10000;
     public static int threads = 1;
@@ -25,9 +27,9 @@ public class MMChainTest {
     public static SparsityEstimator estimatorBasicWorst = new EstimatorBasicWorst();
     public static SparsityEstimator estimatorBasicAvg = new EstimatorBasicAvg();
 //    public static SparsityEstimator estimatorSample = new EstimatorSample();
-    public static SparsityEstimator estimatorDensityMap = new EstimatorDensityMap(1024);
+    public static SparsityEstimator estimatorDensityMap = new EstimatorDensityMap();
     public static SparsityEstimator estimatorMatrixHistogram = new EstimatorMatrixHistogram(true);
-//    public static SparsityEstimator estimatorMatrixHistogram2 = new EstimatorMatrixHistogram(true);
+    public static SparsityEstimator estimatorMatrixHistogramEnhanced = new EstimatorMatrixHistogramEnhanced(false);
     public static SparsityEstimator estimatorLayeredGraph = new EstimatorLayeredGraph();
     public static SparsityEstimator estimatorBitsetMM = new EstimatorBitsetMM();
 
@@ -43,9 +45,13 @@ public class MMChainTest {
     public void test() {
         skewRowUp(m1);
         skewColLeft(m2);
-        skewRowDown(m3);
-        skewColRight(m4);
-//
+
+//        skewRowDown(m1);
+//        skewColRight(m2);
+
+//        skewRowDown2(m1);
+//        skewColRight2(m2);
+
 //        skewRowWithZero(m1);
 //        skewColWithZero(m2);
 
@@ -75,14 +81,62 @@ public class MMChainTest {
 
     private static void skewColRight(MatrixBlock m) {
         MatrixBlock m2 = MatrixBlock.randOperations(n, n / 10, 0.09, 0, 1, "normal", 100);
-        MatrixBlock m1 = MatrixBlock.randOperations(n, n / 10 * 9, 0.001, 0, 1, "normal", 100);
+        MatrixBlock m1 = MatrixBlock.randOperations(n, n / 10 * 9, 0.0003, 0, 1, "normal", 100);
         m1.append(m2, m, true);
+    }
+
+    private static void skewColRight2(MatrixBlock m) {
+        SplittableRandom random = new SplittableRandom();
+        MatrixBlock m2 = new MatrixBlock(n, n / 10, new double[n * n / 10]);
+        for (int i = 0; i < n / 10; i++) {
+            for (int j = 0; j < n / 100; j++) {
+                int r = random.nextInt(n);
+                int c = i;
+                double v = random.nextDouble();
+                m2.setValue(r, c, v);
+            }
+        }
+        MatrixBlock m1 = new MatrixBlock(n, n / 10 * 9, new double[n * n / 10 * 9]);
+        for (int i = 0; i < n / 10 * 9; i++) {
+            for (int j = 0; j < 2; j++) {
+                int r = random.nextInt(n);
+                int c = i;
+                double v = random.nextDouble();
+                m1.setValue(r, c, v);
+            }
+        }
+        m1.append(m2, m, true);
+        m.denseToSparse(true);
     }
 
     private static void skewRowDown(MatrixBlock m) {
         MatrixBlock m2 = MatrixBlock.randOperations(n / 10, n, 0.09, 0, 1, "normal", 100);
-        MatrixBlock m1 = MatrixBlock.randOperations(n / 10 * 9, n, 0.0001, 0, 1, "normal", 100);
+        MatrixBlock m1 = MatrixBlock.randOperations(n / 10 * 9, n, 0.0003, 0, 1, "normal", 100);
         m1.append(m2, m, false);
+    }
+
+    private static void skewRowDown2(MatrixBlock m) {
+        SplittableRandom random = new SplittableRandom();
+        MatrixBlock m2 = new MatrixBlock(n / 10, n, new double[n * n / 10]);
+        for (int i = 0; i < n / 10; i++) {
+            for (int j = 0; j < n / 100; j++) {
+                int r = i;
+                int c = random.nextInt(n);
+                double v = random.nextDouble();
+                m2.setValue(r, c, v);
+            }
+        }
+        MatrixBlock m1 = new MatrixBlock(n / 10 * 9, n, new double[n * n / 10 * 9]);
+        for (int i = 0; i < n / 10 * 9; i++) {
+            for (int j = 0; j < 2; j++) {
+                int r = i;
+                int c = random.nextInt(n);
+                double v = random.nextDouble();
+                m1.setValue(r, c, v);
+            }
+        }
+        m1.append(m2, m, false);
+        m.denseToSparse(true);
     }
 
     private static void skewRowWithZero(MatrixBlock m) {
@@ -112,15 +166,15 @@ public class MMChainTest {
         }, "");
         System.out.println("real: " + real[0]);
 
-        refresh(mmNode);
-        calTime(() -> estim[0] = estimatorBasicWorst.estim(mmNode).getSparsity(), "");
-        System.out.println("mw:   " + estim[0]);
-        System.out.println(error(real[0], estim[0]));
+//        refresh(mmNode);
+//        calTime(() -> estim[0] = estimatorBasicWorst.estim(mmNode).getSparsity(), "");
+//        System.out.println("mw:   " + estim[0]);
+//        System.out.println(error(real[0], estim[0]));
 
-        refresh(mmNode);
-        calTime(() -> estim[0] = estimatorBasicAvg.estim(mmNode).getSparsity(), "");
-        System.out.println("ma:   " + estim[0]);
-        System.out.println(error(real[0], estim[0]));
+//        refresh(mmNode);
+//        calTime(() -> estim[0] = estimatorBasicAvg.estim(mmNode).getSparsity(), "");
+//        System.out.println("ma:   " + estim[0]);
+//        System.out.println(error(real[0], estim[0]));
 
 //        calTime(() -> estim[0] = estimatorSample.estim(m1, m2), "");
 //        System.out.println("samp: " + estim[0]);
@@ -136,9 +190,10 @@ public class MMChainTest {
         System.out.println("mnc:  " + estim[0]);
         System.out.println(error(real[0], estim[0]));
 
-//        refresh(mmNode);
-//        calTime(() -> estim[0] = estimatorMatrixHistogram2.estim(mmNode).getSparsity(), "");
-//        System.out.println("mnc2: " + estim[0]);
+        refresh(mmNode);
+        calTime(() -> estim[0] = estimatorMatrixHistogramEnhanced.estim(mmNode).getSparsity(), "");
+        System.out.println("mnc2: " + estim[0]);
+        System.out.println(error(real[0], estim[0]));
 
         refresh(mmNode);
         calTime(() -> estim[0] = estimatorLayeredGraph.estim(mmNode).getSparsity(), "");
@@ -198,5 +253,23 @@ public class MMChainTest {
         });
         m2.setNonZeros(7);
         System.out.println(estimatorMatrixHistogram.estim(m1, m2));
+        System.out.println(estimatorMatrixHistogramEnhanced.estim(m1, m2));
+    }
+
+    @Test
+    public void testMNCEnhanced() {
+        MatrixBlock m1 = new MatrixBlock(4, 4, new double[]{
+                0, 0, 1, 1,
+                0, 1, 1, 0,
+                1, 1, 0, 0,
+                1, 0, 0, 0
+        });
+        m1.setNonZeros(7);
+        EstimatorMatrixHistogramEnhanced.MatrixHistogram histogram = new EstimatorMatrixHistogramEnhanced.MatrixHistogram(m1);
+
+        m1.denseToSparse(true);
+        histogram = new EstimatorMatrixHistogramEnhanced.MatrixHistogram(m1);
+
+        System.out.println();
     }
 }

@@ -29,8 +29,7 @@ import org.apache.sysds.runtime.matrix.data.MatrixBlock;
 import org.apache.sysds.runtime.meta.DataCharacteristics;
 import org.apache.sysds.runtime.meta.MatrixCharacteristics;
 
-import java.util.Arrays;
-import java.util.SplittableRandom;
+import java.util.*;
 import java.util.stream.IntStream;
 
 /**
@@ -41,6 +40,7 @@ public class EstimatorMatrixHistogramEnhanced extends SparsityEstimator
 	//internal configurations
 	private static final boolean ADVANCED_SKETCH_PROP = false;
 
+	// 上界估计
 	private final boolean _upperBound;
 
 	public EstimatorMatrixHistogramEnhanced() {
@@ -88,9 +88,9 @@ public class EstimatorMatrixHistogramEnhanced extends SparsityEstimator
 		if( isExactMetadataOp(op) )
 			return estimExactMetaData(m1.getDataCharacteristics(),
 				m2.getDataCharacteristics(), op).getSparsity();
-		MatrixHistogram h1 = new MatrixHistogram(m1, _upperBound);
+		MatrixHistogram h1 = new MatrixHistogram(m1);
 		MatrixHistogram h2 = (m1 == m2) ? //self product
-			h1 : new MatrixHistogram(m2, _upperBound);
+			h1 : new MatrixHistogram(m2);
 		return estimIntern(h1, h2, op, null);
 	}
 	
@@ -98,7 +98,7 @@ public class EstimatorMatrixHistogramEnhanced extends SparsityEstimator
 	public double estim(MatrixBlock m1, OpCode op) {
 		if( isExactMetadataOp(op) )
 			return estimExactMetaData(m1.getDataCharacteristics(), null, op).getSparsity();
-		MatrixHistogram h1 = new MatrixHistogram(m1, _upperBound);
+		MatrixHistogram h1 = new MatrixHistogram(m1);
 		return estimIntern(h1, null, op, null);
 	}
 	
@@ -107,7 +107,7 @@ public class EstimatorMatrixHistogramEnhanced extends SparsityEstimator
 			return null;
 		//ensure synopsis is properly cached and reused
 		if( node.isLeaf() && node.getSynopsis() == null )
-			node.setSynopsis(new MatrixHistogram(node.getData(), _upperBound));
+			node.setSynopsis(new MatrixHistogram(node.getData()));
 		else if( !node.isLeaf() )
 			estim(node, false); //recursively obtain synopsis
 		return (MatrixHistogram) node.getSynopsis();
@@ -168,6 +168,103 @@ public class EstimatorMatrixHistogramEnhanced extends SparsityEstimator
 			for( int j=0; j<h1.getCols(); j++ )
 				nnz += (long)h1.cNnz[j] * h2.rNnz[j];
 		}
+		// enhance v1
+		if (h1.rNnz1st != null || h2.rNnz1st != null) {
+			long rSpace = 0;
+			long cSpace = 0;
+			long nnzExact = 0;
+			double nnzEstim = 0;
+
+			List<Long> spaceList = new ArrayList<>(); // debug
+
+			for (int j = 0; j < h1.getCols(); j++) {
+				spaceList.add(rSpace * cSpace); // debug
+
+				long cNnzNew = h1.cNnz1st == null ? (j == 0 ? h1.rNonEmpty : 0) : (h1.cNnz1st[j] == null ? 0 : h1.cNnz1st[j].length);
+				long rNnzNew = h2.rNnz1st == null ? (j == 0 ? h2.cNonEmpty : 0) : (h2.rNnz1st[j] == null ? 0 : h2.rNnz1st[j].length);
+
+				long nnz1 = (h1.cNnz[j] - cNnzNew) * rNnzNew + (h2.rNnz[j] - rNnzNew) * cNnzNew + cNnzNew * rNnzNew;
+				double nnz2 = (h1.cNnz[j] - cNnzNew) * (h2.rNnz[j] - rNnzNew) * (1.0 - Math.min(1.0, nnzEstim / (rSpace * cSpace == 0 ? 1 : rSpace * cSpace)));
+				nnzEstim += nnz1 + nnz2;
+
+				long c1New = h1.cNnz1st == null ? 0 : (h1.cNnz1st[j] == null ? 0 : Arrays.stream(h1.cNnz1st[j]).filter(i -> h1.rNnz[i] == 1).count());
+				long r1New = h2.rNnz1st == null ? 0 : (h2.rNnz1st[j] == null ? 0 : Arrays.stream(h2.rNnz1st[j]).filter(i -> h2.cNnz[i] == 1).count());
+
+				long nnz3 = (h1.cNnz[j] - c1New) * r1New + (h2.rNnz[j] - r1New) * c1New + c1New * r1New;
+				nnzExact += nnz3;
+				nnzEstim -= nnz3;
+
+				// 更新space
+				rSpace += cNnzNew - c1New;
+				cSpace += rNnzNew - r1New;
+			}
+
+			nnz = (long) (nnzExact + nnzEstim);
+
+			System.out.println(spaceList); // debug
+		}
+		// enhance v2
+//		if (h1.rNnz1st != null || h2.rNnz1st != null) {
+//			long rSpace = 0;
+//			long cSpace = 0;
+//			long nnzExact = 0;
+//			double nnzEstim = 0;
+//
+//			long base = 2;
+//			int exp = 10;
+//			double lower = Math.pow(base, exp);
+//			List<double[]> splitList = new ArrayList<>(); // double数组有两个元素，第0位表示space，第1位表示deltaNnz
+//
+//			for (int j = 0; j < h1.getCols(); j++) {
+//				long cNnzNew = h1.cNnz1st == null ? (j == 0 ? h1.rNonEmpty : 0) : (h1.cNnz1st[j] == null ? 0 : h1.cNnz1st[j].length);
+//				long rNnzNew = h2.rNnz1st == null ? (j == 0 ? h2.cNonEmpty : 0) : (h2.rNnz1st[j] == null ? 0 : h2.rNnz1st[j].length);
+//
+//				long nnz1 = (h1.cNnz[j] - cNnzNew) * rNnzNew + (h2.rNnz[j] - rNnzNew) * cNnzNew + cNnzNew * rNnzNew;
+//
+//				long c1New = h1.cNnz1st == null ? 0 : (h1.cNnz1st[j] == null ? 0 : Arrays.stream(h1.cNnz1st[j]).filter(i -> h1.rNnz[i] == 1).count());
+//				long r1New = h2.rNnz1st == null ? 0 : (h2.rNnz1st[j] == null ? 0 : Arrays.stream(h2.rNnz1st[j]).filter(i -> h2.cNnz[i] == 1).count());
+//
+//				while (rSpace * cSpace >= lower) {
+//					// 更新lower
+//					lower = Math.pow(base, ++exp);
+//					// 跳过nnzEstim为0的情况
+//					if (nnzEstim == 0) continue;
+//					// 设置splitList
+//					splitList.add(new double[]{rSpace * cSpace, nnzEstim});
+//					// nnzEstim置零
+//					nnzEstim = 0;
+//				}
+//
+//				// 更新splitList
+//				double nnz2 = 0;
+//				if (rSpace != 0 && cSpace != 0) {
+//					for (int i = 0; i < splitList.size(); i++) {
+//						var split = splitList.get(i);
+//						double deltaSpace = split[0] - (i == 0 ? 0 : splitList.get(i - 1)[0]);
+//						if (deltaSpace > 0) {
+//							split[1] += (h1.cNnz[j] - cNnzNew) * (h2.rNnz[j] - rNnzNew) * (deltaSpace / (rSpace * cSpace)) * (1.0 - Math.min(1.0, split[1] / deltaSpace));
+//						}
+//					}
+//					double deltaSpace = rSpace * cSpace - (splitList.isEmpty() ? 0 : splitList.get(splitList.size() - 1)[0]);
+//					if (deltaSpace > 0) {
+//						nnz2 = (h1.cNnz[j] - cNnzNew) * (h2.rNnz[j] - rNnzNew) * (deltaSpace / (rSpace * cSpace)) * (1.0 - Math.min(1.0, nnzEstim / deltaSpace));
+//					}
+//				}
+//				nnzEstim += nnz1 + nnz2;
+//
+//				long nnz3 = (h1.cNnz[j] - c1New) * r1New + (h2.rNnz[j] - r1New) * c1New + c1New * r1New;
+//				nnzExact += nnz3;
+//				nnzEstim -= nnz3;
+//
+//				// 更新space
+//				rSpace += cNnzNew - c1New;
+//				cSpace += rNnzNew - r1New;
+//			}
+//			nnzEstim += splitList.stream()
+//					.mapToDouble(e -> e[1])
+//					.sum();
+//			nnz = (long) (nnzExact + nnzEstim);
+//		}
 		//general case with approximate output
 		else {
 			long mnOut = (long) h1.rNonEmpty * h2.cNonEmpty;
@@ -190,20 +287,20 @@ public class EstimatorMatrixHistogramEnhanced extends SparsityEstimator
 		//compute final sparsity
 		return OptimizerUtils.getSparsity(h1.getRows(), h2.getCols(), nnz);
 	}
-	
+
 	public static class MatrixHistogram {
 		// count vectors (the histogram)
 		private final int[] rNnz;    //nnz per row
-//		private final int[][] rFirstNnz; // 每行首次出现的非零元素个数
+		private int[][] rNnz1st; // 每行首次出现的非零元素个数
 		private final int[] cNnz;    //nnz per col
-//		private final int[][] cFirstNnz; // 每列首次出现的非零元素个数
+		private int[][] cNnz1st; // 每列首次出现的非零元素个数
 		// additional summary statistics
 		private final int rMaxNnz, cMaxNnz;     //max nnz per row/row
 		private final int rNonEmpty, cNonEmpty; //number of non-empty rows/cols (w/ empty is nnz=0)
 		private boolean fullDiag;               //true if there exists a full diagonal of nonzeros
 		private MatrixBlock _data = null; //optional leaf data
 		
-		public MatrixHistogram(MatrixBlock in, boolean upperBound) {
+		public MatrixHistogram(MatrixBlock in) {
 			// 1) allocate basic synopsis
 			final int m = in.getNumRows();
 			final int n = in.getNumColumns();
@@ -254,9 +351,99 @@ public class EstimatorMatrixHistogramEnhanced extends SparsityEstimator
 			int[] cSummary = deriveSummaryStatistics(cNnz);
 			rMaxNnz = rSummary[0]; cMaxNnz = cSummary[0];
 			rNonEmpty = rSummary[1]; cNonEmpty = cSummary[1];
+
+			// 4) 计算另外两个数组 TODO 考虑置换矩阵的特殊情况
+			if (!in.isEmpty() && (rMaxNnz > 1 || cMaxNnz > 1) && in.getLength() != in.getNonZeros()) {
+				int[] r1st = new int[in.getNumRows()];
+				int[] c1st = new int[in.getNumColumns()];
+				Arrays.fill(r1st, -1);
+				Arrays.fill(c1st, -1);
+
+				if (in.isInSparseFormat()) {
+					SparseBlock a = in.getSparseBlock();
+					for (int i = 0; i < m; i++) {
+						if (a.isEmpty(i)) {
+							continue;
+						}
+						int alen = a.size(i);
+						int apos = a.pos(i);
+						int[] aix = a.indexes(i);
+						if (r1st[i] == -1 || r1st[i] > aix[apos]) {
+							r1st[i] = aix[apos];
+
+						}
+						for (int k = apos; k < apos + alen; k++) {
+							if (c1st[aix[k]] == -1 || c1st[aix[k]] > i) {
+								c1st[aix[k]] = i;
+							}
+						}
+					}
+				} else {
+					DenseBlock a = in.getDenseBlock();
+					for (int i = 0; i < m; i++) {
+						double[] avals = a.values(i);
+						int aix = a.pos(i);
+						for (int j = 0; j < n; j++) {
+							if (avals[aix + j] != 0) {
+								if (r1st[i] == -1 || r1st[i] > j) {
+									r1st[i] = j;
+								}
+								if (c1st[j] == -1 || c1st[j] > i) {
+									c1st[j] = i;
+								}
+							}
+						}
+					}
+				}
+
+				// 计数
+				int[] rCnt = new int[m];
+				int[] cCnt = new int[n];
+
+				for (int idx : r1st) {
+					if (idx != -1) {
+						cCnt[idx]++;
+					}
+				}
+				for (int idx : c1st) {
+					if (idx != -1) {
+						rCnt[idx]++;
+					}
+				}
+
+				rNnz1st = new int[m][];
+				cNnz1st = new int[n][];
+
+				for (int i = 0; i < m; i++) {
+					if (rCnt[i] > 0) {
+						rNnz1st[i] = new int[rCnt[i]];
+					}
+				}
+				for (int i = 0; i < n; i++) {
+					if (cCnt[i] > 0) {
+						cNnz1st[i] = new int[cCnt[i]];
+					}
+				}
+
+				for (int i = 0; i < m; i++) {
+					int j = r1st[i];
+					if (j != -1) {
+						cNnz1st[j][cCnt[j] - 1] = i;
+						cCnt[j]--;
+					}
+				}
+
+				for (int j = 0; j < n; j++) {
+					int i = c1st[j];
+					if (i != -1) {
+						rNnz1st[i][rCnt[i] - 1] = j;
+						rCnt[i]--;
+					}
+				}
+			}
 		}
 		
-		public MatrixHistogram(int[] r, int[] r1e, int[] c, int[] c1e, int rmax, int cmax) {
+		public MatrixHistogram(int[] r, int[][] r1, int[] c, int[][] c1, int rmax, int cmax) {
 			rNnz = r;
 			cNnz = c;
 			rMaxNnz = rmax;
@@ -265,6 +452,9 @@ public class EstimatorMatrixHistogramEnhanced extends SparsityEstimator
 			//update non-zero rows/cols
 			rNonEmpty = (int)Arrays.stream(rNnz).filter(i -> i!=0).count();
 			cNonEmpty = (int)Arrays.stream(cNnz).filter(i -> i!=0).count();
+
+			rNnz1st = r1;
+			cNnz1st = c1;
 		}
 
 		public MatrixHistogram(int[] r, int[] c) {
